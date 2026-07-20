@@ -14,7 +14,7 @@ android {
     defaultConfig {
         applicationId = "uz.callguard.app"
         minSdk = 29
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
