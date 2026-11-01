@@ -2,6 +2,7 @@ package uz.callguard.app.data
 
 import android.content.Context
 import kotlinx.coroutines.flow.Flow
+import androidx.room.withTransaction
 import uz.callguard.app.heuristic.NumberFormatRules
 
 /**
@@ -9,7 +10,8 @@ import uz.callguard.app.heuristic.NumberFormatRules
  */
 class SpamNumberRepository(context: Context) {
 
-    private val dao = CallGuardDatabase.getInstance(context).spamNumberDao()
+    private val database = CallGuardDatabase.getInstance(context)
+    private val dao = database.spamNumberDao()
 
     // --- Второй слой Architecture: используется после HeuristicFilter при verdict = UNKNOWN ---
     suspend fun isKnownSpam(rawNumber: String): Boolean {
@@ -23,11 +25,21 @@ class SpamNumberRepository(context: Context) {
     suspend fun addNumber(rawNumber: String, source: String = "manual") {
         val normalized = NumberFormatRules.check(rawNumber).normalized
         val hash = HashUtils.sha256(normalized)
-        val existing = dao.findByHash(hash)
-        if (existing != null) {
-            dao.incrementReportCount(hash)
-        } else {
-            dao.insert(SpamNumberEntity(numberHash = hash, source = source))
+        database.withTransaction {
+            val existing = dao.findByHash(hash)
+            if (existing != null) {
+                dao.update(existing.copy(reportCount = existing.reportCount + 1, phoneNumber = normalized))
+            } else {
+                dao.insert(SpamNumberEntity(numberHash = hash, source = source, phoneNumber = normalized))
+            }
+        }
+    }
+
+    /** Both writes commit together; a failed insert leaves the history entry intact. */
+    suspend fun reportCallAsSpam(call: CallHistoryEntity) {
+        database.withTransaction {
+            addNumber(call.number, source = "user_report")
+            database.callHistoryDao().deleteById(call.id)
         }
     }
 
