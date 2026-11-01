@@ -5,19 +5,26 @@ import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
-@Database(entities = [SpamNumberEntity::class, CallHistoryEntity::class], version = 2, exportSchema = false)
+@Database(entities = [SpamNumberEntity::class, CallHistoryEntity::class], version = 3, exportSchema = false)
 abstract class CallGuardDatabase : RoomDatabase() {
 
     abstract fun spamNumberDao(): SpamNumberDao
     abstract fun callHistoryDao(): CallHistoryDao
 
     companion object {
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE spam_numbers ADD COLUMN phoneNumber TEXT")
+            }
+        }
+
         @Volatile
         private var INSTANCE: CallGuardDatabase? = null
 
@@ -28,6 +35,7 @@ abstract class CallGuardDatabase : RoomDatabase() {
                     CallGuardDatabase::class.java,
                     "callguard_local_spam_db"
                 )
+                .addMigrations(MIGRATION_2_3)
                 .fallbackToDestructiveMigration()
                 .addCallback(DatabaseCallback(context.applicationContext))
                 .build().also { INSTANCE = it }

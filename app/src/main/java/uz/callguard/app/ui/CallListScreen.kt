@@ -1,184 +1,115 @@
 package uz.callguard.app.ui
 
-import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import uz.callguard.app.data.CallGuardDatabase
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import uz.callguard.app.data.CallHistoryEntity
-import uz.callguard.app.data.SpamNumberRepository
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CallListScreen(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val database = remember { CallGuardDatabase.getInstance(context) }
-    val callHistoryDao = remember { database.callHistoryDao() }
-    val spamRepository = remember { SpamNumberRepository(context) }
-    val scope = rememberCoroutineScope()
-
-    val historyFlow = remember { callHistoryDao.observeAll() }
-    val historyList by historyFlow.collectAsState(initial = emptyList())
+fun CallListScreen(modifier: Modifier = Modifier, viewModel: CallListViewModel = viewModel()) {
+    val history by viewModel.history.collectAsStateWithLifecycle()
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val today by produceState(LocalDate.now()) {
+        while (true) {
+            value = LocalDate.now()
+            delay(30_000)
+        }
+    }
+    val zone = ZoneId.systemDefault()
+    val sections = remember(history, today, zone) { groupCallHistory(history.orEmpty(), today, zone) }
 
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "История проверенных звонков",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
-            if (historyList.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "История звонков пока пуста",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Text("История вызовов", style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
+            when {
+                history == null -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(historyList, key = { it.id }) { item ->
-                        CallHistoryItemCard(
-                            item = item,
-                            onReportSpam = {
-                                scope.launch(Dispatchers.IO) {
-                                    spamRepository.addNumber(item.number, source = "user_report")
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(context, "Номер внесен в черный список (user_report)", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            onReportNotSpam = {
-                                scope.launch(Dispatchers.IO) {
-                                    spamRepository.removeNumber(item.number)
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(context, "Номер удален из спам-базы", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
+                history.orEmpty().isEmpty() -> ListEmptyState(Icons.Rounded.History, "История пуста",
+                    "Здесь появятся проверенные звонки", Modifier.weight(1f))
+                else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    sections.forEach { (section, calls) ->
+                        stickyHeader(key = section.name) {
+                            Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+                                Text(section.title, style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
                             }
-                        )
+                        }
+                        items(calls, key = { it.id }) { call ->
+                            CallHistoryItemCard(call, busy, onReportSpam = { viewModel.reportSpam(call) },
+                                onIgnore = { pendingDeleteId = call.id },
+                                modifier = Modifier.padding(horizontal = 16.dp).animateItem())
+                        }
                     }
                 }
             }
         }
     }
+    if (pendingDeleteId != null) {
+        AlertDialog(onDismissRequest = { pendingDeleteId = null },
+            title = { Text("Точно удалить запись из истории?") },
+            text = { Text("Запись исчезнет из истории. Список спама не изменится.") },
+            confirmButton = {
+                TextButton(enabled = !busy, onClick = {
+                    pendingDeleteId?.let(viewModel::deleteHistory)
+                    pendingDeleteId = null
+                }) { Text("Да") }
+            }, dismissButton = { TextButton(onClick = { pendingDeleteId = null }) { Text("Отмена") } })
+    }
+    ListErrorDialog(error, viewModel::dismissError)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CallHistoryItemCard(
     item: CallHistoryEntity,
+    busy: Boolean,
     onReportSpam: () -> Unit,
-    onReportNotSpam: () -> Unit
+    onIgnore: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val dateFormat = remember { SimpleDateFormat("HH:mm · dd.MM.yyyy", Locale.getDefault()) }
-    val formattedTime = remember(item.timestampMs) { dateFormat.format(Date(item.timestampMs)) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = item.number,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                // Метка Вердикта
-                val badgeColor = if (item.isSpam) Color(0xFFD32F2F) else Color(0xFF388E3C)
-                val badgeText = if (item.isSpam) "СПАМ (${item.blockModeApplied})" else "ЧИСТЫЙ"
-
-                Box(
-                    modifier = Modifier
-                        .background(badgeColor, shape = RoundedCornerShape(4.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = badgeText,
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+    val formatter = remember { DateTimeFormatter.ofPattern("HH:mm · dd.MM.yyyy") }
+    val time = Instant.ofEpochMilli(item.timestampMs).atZone(ZoneId.systemDefault()).format(formatter)
+    Card(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(item.number, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(time, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button(onClick = onReportSpam, enabled = !busy) {
+                    Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("В спам")
                 }
-            }
-
-            Text(
-                text = "$formattedTime ${if (item.reasonDetails.isNotBlank()) "· ${item.reasonDetails}" else ""}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
-            )
-
-            // UserReport Кнопки
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = onReportSpam,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
-                ) {
-                    Text("Это спам", fontSize = 12.sp)
-                }
-
-                OutlinedButton(
-                    onClick = onReportNotSpam,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Не спам", fontSize = 12.sp)
+                OutlinedButton(onClick = onIgnore, enabled = !busy) {
+                    Icon(Icons.Rounded.VisibilityOff, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Не спам / Игнор")
                 }
             }
         }

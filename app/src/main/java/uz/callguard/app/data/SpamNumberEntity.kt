@@ -4,8 +4,8 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * Одна запись в LocalSpamDB. Хранится только хэш номера (number_hash)
- * для обеспечения приватности.
+ * Хэш используется для поиска, номер — для отображения пользовательских записей.
+ * У старых и импортированных записей номер может отсутствовать.
  */
 @Entity(tableName = "spam_numbers")
 data class SpamNumberEntity(
@@ -13,5 +13,6 @@ data class SpamNumberEntity(
     val numberHash: String,
     val source: String,      // "user_report" | "telegram" | "operator" | "kaggle" | "manual" | "assets"
     val reportCount: Int = 1,
-    val addedAtEpochMs: Long = System.currentTimeMillis()
+    val addedAtEpochMs: Long = System.currentTimeMillis(),
+    val phoneNumber: String? = null
 )

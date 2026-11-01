@@ -1,92 +1,82 @@
 package uz.callguard.app.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import uz.callguard.app.data.SpamNumberRepository
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
-/**
- * Простой CRUD для LocalSpamDB: добавить номер вручную, посмотреть список, удалить.
- */
 @Composable
-fun SpamNumbersScreen(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val repository = remember { SpamNumberRepository(context) }
-    val scope = rememberCoroutineScope()
-
-    var input by remember { mutableStateOf("") }
-    val numbersFlow = remember { repository.observeAll() }
-    val numbers by numbersFlow.collectAsState(initial = emptyList())
+fun SpamNumbersScreen(modifier: Modifier = Modifier, viewModel: SpamNumbersViewModel = viewModel()) {
+    val numbers by viewModel.numbers.collectAsStateWithLifecycle()
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    var input by rememberSaveable { mutableStateOf("") }
+    val formatter = remember { DateTimeFormatter.ofPattern("dd.MM.yyyy") }
+    // Keep manual entry, but do not allow arbitrary labels or hashes into the phone display.
+    val validInput = input.trim().matches(Regex("\\+?[0-9 ()-]{3,25}")) && input.count(Char::isDigit) in 3..15
 
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            Text(text = "LocalSpamDB — ${numbers.size} хэшей")
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    label = { Text("+998 90 123 45 67") },
-                    modifier = Modifier.weight(1f)
-                )
-                Button(onClick = {
-                    val toAdd = input
-                    if (toAdd.isNotBlank()) {
-                        scope.launch(Dispatchers.IO) {
-                            repository.addNumber(toAdd, source = "manual")
-                        }
-                        input = ""
-                    }
-                }) {
-                    Text("Добавить")
-                }
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Text("База спама", style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = input, onValueChange = { input = it },
+                    label = { Text("Номер телефона") }, placeholder = { Text("+998 90 123 45 67") },
+                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
+                Button(onClick = { viewModel.addNumber(input.trim()); input = "" }, enabled = validInput && !busy,
+                    modifier = Modifier.align(Alignment.End)) { Text("Добавить") }
             }
-
-            LazyColumn {
-                items(numbers, key = { it.numberHash }) { entity ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = entity.numberHash, maxLines = 1)
-                            Text(text = "${entity.source} · reports: ${entity.reportCount}")
-                        }
-                        TextButton(onClick = {
-                            scope.launch(Dispatchers.IO) {
-                                repository.removeNumberByHash(entity.numberHash)
+            when {
+                numbers == null -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+                numbers.orEmpty().isEmpty() -> ListEmptyState(Icons.Rounded.Security, "Список спама пуст",
+                    "Добавьте номер вручную или из истории вызовов", Modifier.weight(1f))
+                else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(numbers.orEmpty(), key = { it.numberHash }) { number ->
+                        Card(Modifier.fillMaxWidth().animateItem(), shape = MaterialTheme.shapes.large,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                            Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.errorContainer) {
+                                    Icon(Icons.Rounded.Security, contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(12.dp).size(24.dp))
+                                }
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(number.phoneNumber ?: "Номер недоступен", style = MaterialTheme.typography.titleMedium)
+                                    Text("Добавлен " + Instant.ofEpochMilli(number.addedAtEpochMs)
+                                        .atZone(ZoneId.systemDefault()).format(formatter),
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = { viewModel.deleteNumber(number.numberHash) }, enabled = !busy) {
+                                    Icon(Icons.Rounded.Delete, contentDescription = "Удалить ${number.phoneNumber ?: "запись"} из спама",
+                                        tint = MaterialTheme.colorScheme.error)
+                                }
                             }
-                        }) {
-                            Text("Удалить")
                         }
                     }
                 }
             }
         }
     }
+    ListErrorDialog(error, viewModel::dismissError)
 }
