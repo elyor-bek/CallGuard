@@ -2,13 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Разрешения -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
-    <uses-permission android:name="android.permission.READ_CALL_LOG"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -27,13 +29,29 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Слушатель уведомлений Samsung InCallUI.
+            ВАЖНО: android:exported должен быть true!
+        -->
+        <service
+            android:name=".notification.CallGuardNotificationListener"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
+
+        <!--
+            Основной сервис фильтрации звонков Android Telecom (ROLE_CALL_SCREENING).
+            Требует разрешение BIND_SCREENING_SERVICE и intent-filter android.telecom.CallScreeningService.
+        -->
         <service
             android:name=".CallScreeningServiceImpl"
             android:permission="android.permission.BIND_SCREENING_SERVICE"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.telecom.CallScreeningService"/>
-                <category android:name="android.intent.category.DEFAULT"/>
+                <action android:name="android.telecom.CallScreeningService" />
             </intent-filter>
         </service>
 
