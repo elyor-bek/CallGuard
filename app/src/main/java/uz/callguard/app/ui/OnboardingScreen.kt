@@ -1,158 +1,85 @@
 package uz.callguard.app.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import uz.callguard.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun OnboardingScreen(
-    isRoleGranted: Boolean,
     onRequestRole: () -> Unit,
-    isContactsGranted: Boolean,
-    onRequestContactsPermission: () -> Unit,
-    isBatteryOptIgnored: Boolean,
-    onRequestBatteryOpt: () -> Unit,
-    onCompleteOnboarding: () -> Unit,
-    modifier: Modifier = Modifier,
+    roleAvailable: Boolean,
+    requestingRole: Boolean,
+    notificationsGranted: Boolean,
+    notificationsDenied: Boolean,
+    onRequestNotifications: () -> Unit,
+    overlayGranted: Boolean,
+    onRequestOverlay: () -> Unit,
+    errorMessage: String?,
+    modifier: Modifier = Modifier
 ) {
-    Scaffold(modifier = modifier.fillMaxSize()) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    text = "Добро пожаловать в CallGuard",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Настройте разрешения для полной локальной защиты от спама и скама",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
-                )
-
-                // Шаг 1: Роль CALL_SCREENING
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isRoleGranted) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "1. Защита звонков (ROLE_CALL_SCREENING)",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = if (isRoleGranted) "✓ Разрешение предоставлено" else "Назначьте CallGuard приложением по умолчанию для фильтрации звонков",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                        if (!isRoleGranted) {
-                            Button(
-                                onClick = onRequestRole,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp)
-                            ) {
-                                Text("Назначить фильтром вызовов")
-                            }
-                        }
-                    }
-                }
-
-                // Шаг 2: Разрешение на Контакты
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isContactsGranted) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "2. Белый список контактов (READ_CONTACTS)",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = if (isContactsGranted) "✓ Доступ к контактам разрешен" else "Разрешите доступ к контактам, чтобы вызовы от ваших знакомых никогда не блокировались",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                        if (!isContactsGranted) {
-                            Button(
-                                onClick = onRequestContactsPermission,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp)
-                            ) {
-                                Text("Предоставить доступ к контактам")
-                            }
-                        }
-                    }
-                }
-
-                // Шаг 3: Оптимизация батареи (Samsung/Xiaomi)
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "3. Фоновое функционирование",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = "⚠️ Внимание: если у вас устройство Samsung или Xiaomi, отключите оптимизацию батареи, чтобы система не останавливала фоновый сервис.",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                        if (!isBatteryOptIgnored) {
-                            OutlinedButton(
-                                onClick = onRequestBatteryOpt,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp)
-                            ) {
-                                Text("Отключить оптимизацию батареи")
-                            }
-                        } else {
-                            Text("✓ Оптимизация отключена", style = MaterialTheme.typography.bodySmall)
-                        }
+    Scaffold(modifier.fillMaxSize()) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically)) {
+            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
+                Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.padding(28.dp).size(64.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+            Text(stringResource(R.string.welcome), style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.welcome_hint), style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.overlay_permission_title), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(if (overlayGranted) R.string.overlay_permission_granted else R.string.overlay_permission_hint))
+                    if (!overlayGranted) OutlinedButton(onClick = onRequestOverlay) {
+                        Text(stringResource(R.string.overlay_permission_allow))
                     }
                 }
             }
-
-            Button(
-                onClick = onCompleteOnboarding,
-                enabled = isRoleGranted,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-            ) {
-                Text("Перейти к приложению")
+            Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.notification_intro), style = MaterialTheme.typography.titleLarge)
+                    Text(if (notificationsGranted) stringResource(R.string.notification_allowed)
+                        else stringResource(R.string.notification_intro_hint))
+                    if (!notificationsGranted) OutlinedButton(onClick = onRequestNotifications, enabled = !requestingRole) {
+                        Text(if (notificationsDenied) stringResource(R.string.notification_settings) else stringResource(R.string.notification_allow))
+                    }
+                }
             }
+            Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(stringResource(R.string.spam_protection), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.role_intro),
+                        style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.role_hint),
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = onRequestRole, enabled = roleAvailable && !requestingRole,
+                        modifier = Modifier.fillMaxWidth()) {
+                        Text(if (requestingRole) stringResource(R.string.permission_wait) else stringResource(R.string.enable_protection))
+                    }
+                    if (!roleAvailable) Text(stringResource(R.string.role_unavailable),
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    if (errorMessage != null) Text(errorMessage, style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error)
+                }
+            }
+            Text(stringResource(R.string.permission_hint),
+                style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

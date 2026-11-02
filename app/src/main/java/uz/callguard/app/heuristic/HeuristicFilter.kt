@@ -1,58 +1,25 @@
 package uz.callguard.app.heuristic
 
-/**
- * Быстрый первый слой. Работает синхронно, без сети/БД — только regex и множества в памяти.
- * Если возвращает BLOCK/ALLOW с высокой уверенностью — второй слой (LocalSpamDB)
- * можно даже не спрашивать.
- */
+import java.time.LocalTime
+
+/** Local hints are uncertain: they warn, never reject a call. */
 object HeuristicFilter {
+    private val international = Regex("^\\+[1-9][0-9]{6,14}$")
+    private val unusualUzPrefix = Regex("^\\+9980[0-9].*")
+    private val repeatedDigits = Regex("([0-9])\\1{6,}")
 
-    fun evaluate(rawNumber: String): HeuristicResult {
+    fun evaluate(rawNumber: String, time: LocalTime = LocalTime.now(), isContact: Boolean = false): HeuristicResult {
+        if (isContact) return HeuristicResult(HeuristicResult.Verdict.ALLOW, 0, emptyList())
         val reasons = mutableListOf<String>()
-        var score = 0
-
         val format = NumberFormatRules.check(rawNumber)
-
-        if (!format.isWellFormed && !format.isShortServiceNumber) {
-            score += 35
-            reasons += "malformed_number_format"
-        }
-
-        if (format.isWellFormed && !format.isKnownOperatorPrefix) {
-            score += 15
-            reasons += "unknown_operator_prefix"
-        }
-
-        if (VoipPrefixRanges.isLikelyVoip(format.normalized)) {
-            score += 30
-            reasons += "voip_prefix_match"
-        }
-
-        val spoofed = SpoofDetection.isSpoofedShortNumber(format.normalized)
-        if (spoofed) {
-            score += 50
-            reasons += "bank_short_number_spoof"
-        }
-
-        if (format.isShortServiceNumber && !spoofed) {
-            return HeuristicResult(
-                verdict = HeuristicResult.Verdict.ALLOW,
-                score = 0,
-                reasons = listOf("known_short_service_number")
-            )
-        }
-
-        val verdict = when {
-            score >= 60 -> HeuristicResult.Verdict.BLOCK
-            score >= 30 -> HeuristicResult.Verdict.SUSPECT
-            format.isWellFormed && format.isKnownOperatorPrefix -> HeuristicResult.Verdict.ALLOW
-            else -> HeuristicResult.Verdict.UNKNOWN
-        }
-
+        if (time.hour >= 23 || time.hour < 7) reasons += "unusual_call_time"
+        if (!format.isShortServiceNumber && !international.matches(format.normalized)) reasons += "malformed_number_format"
+        if (unusualUzPrefix.matches(format.normalized) || repeatedDigits.containsMatchIn(format.normalized)) reasons += "unusual_number_pattern"
+        if (VoipPrefixRanges.isLikelyVoip(format.normalized)) reasons += "voip_prefix_match"
+        if (SpoofDetection.isSpoofedShortNumber(format.normalized)) reasons += "bank_short_number_spoof"
         return HeuristicResult(
-            verdict = verdict,
-            score = score.coerceIn(0, 100),
-            reasons = reasons
+            if (reasons.isNotEmpty()) HeuristicResult.Verdict.SUSPICIOUS else HeuristicResult.Verdict.ALLOW,
+            (reasons.size * 30).coerceAtMost(90), reasons
         )
     }
 }

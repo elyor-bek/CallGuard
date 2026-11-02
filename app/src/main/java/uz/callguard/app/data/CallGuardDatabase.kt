@@ -12,16 +12,35 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
-@Database(entities = [SpamNumberEntity::class, CallHistoryEntity::class], version = 3, exportSchema = false)
+@Database(entities = [SpamNumberEntity::class, CallHistoryEntity::class, NumberPatternEntity::class, PendingSpamReport::class], version = 5, exportSchema = false)
 abstract class CallGuardDatabase : RoomDatabase() {
 
     abstract fun spamNumberDao(): SpamNumberDao
     abstract fun callHistoryDao(): CallHistoryDao
+    abstract fun numberPatternDao(): NumberPatternDao
+    abstract fun pendingSpamReportDao(): PendingSpamReportDao
 
     companion object {
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE spam_numbers ADD COLUMN phoneNumber TEXT")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS number_patterns (pattern TEXT NOT NULL, addedAtEpochMs INTEGER NOT NULL, PRIMARY KEY(pattern))")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE spam_numbers ADD COLUMN spamScore INTEGER NOT NULL DEFAULT 100")
+                db.execSQL("ALTER TABLE spam_numbers ADD COLUMN category TEXT")
+                db.execSQL("ALTER TABLE spam_numbers ADD COLUMN isGlobal INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE spam_numbers ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE spam_numbers SET updatedAt = addedAtEpochMs")
+                db.execSQL("CREATE TABLE IF NOT EXISTS pending_spam_reports (callId INTEGER NOT NULL, numberHash TEXT NOT NULL, createdAt INTEGER NOT NULL, PRIMARY KEY(callId))")
             }
         }
 
@@ -35,8 +54,8 @@ abstract class CallGuardDatabase : RoomDatabase() {
                     CallGuardDatabase::class.java,
                     "callguard_local_spam_db"
                 )
-                .addMigrations(MIGRATION_2_3)
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .fallbackToDestructiveMigration(true)
                 .addCallback(DatabaseCallback(context.applicationContext))
                 .build().also { INSTANCE = it }
             }

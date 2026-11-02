@@ -4,8 +4,16 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:padding="16dp"
-    android:background="#D32F2F"
+    android:background="@drawable/overlay_warning_background"
     android:gravity="center_vertical">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⚠"
+        android:textSize="24sp"
+        android:textColor="@color/overlay_warning_text"
+        android:layout_marginEnd="12dp" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -17,7 +25,7 @@
             android:id="@+id/tvNumber"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/overlay_warning_text"
             android:textSize="18sp"
             android:textStyle="bold" />
 
@@ -26,7 +34,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/overlay_warning_text"
             android:textSize="14sp" />
     </LinearLayout>
 
@@ -36,7 +44,7 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
         android:text="@string/close_overlay"
-        android:textColor="#FFFFFF"
+        android:textColor="@color/overlay_warning_text"
         style="?android:attr/borderlessButtonStyle" />
 
 </LinearLayout>

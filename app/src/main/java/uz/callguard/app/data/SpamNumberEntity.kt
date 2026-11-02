@@ -1,5 +1,6 @@
 package uz.callguard.app.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -14,5 +15,11 @@ data class SpamNumberEntity(
     val source: String,      // "user_report" | "telegram" | "operator" | "kaggle" | "manual" | "assets"
     val reportCount: Int = 1,
     val addedAtEpochMs: Long = System.currentTimeMillis(),
-    val phoneNumber: String? = null
-)
+    val phoneNumber: String? = null,
+    @ColumnInfo(defaultValue = "100") val spamScore: Int = 100,
+    val category: String? = null,
+    @ColumnInfo(defaultValue = "0") val isGlobal: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = addedAtEpochMs
+) {
+    init { require(spamScore in 0..100) }
+}
