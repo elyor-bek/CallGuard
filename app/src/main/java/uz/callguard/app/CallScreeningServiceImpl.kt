@@ -2,13 +2,16 @@ package uz.callguard.app
 
 import android.telecom.Call
 import android.telecom.CallScreeningService
+import android.telecom.TelecomManager
+import kotlinx.coroutines.flow.first
+import uz.callguard.app.heuristic.CallProtectionEngine
+import uz.callguard.app.heuristic.ScreeningDecision
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import uz.callguard.app.data.BlockMode
 import uz.callguard.app.data.CallGuardDatabase
@@ -39,21 +42,13 @@ class CallScreeningServiceImpl : CallScreeningService() {
             }
 
             val rawNumber = callDetails.handle?.schemeSpecificPart
-            if (rawNumber.isNullOrBlank()) {
-                allowCall(callDetails)
-                return
-            }
-
-            val normalizedNumber = NumberFormatRules.check(rawNumber).normalized
-            if (normalizedNumber.isBlank()) {
-                allowCall(callDetails)
-                return
-            }
+            val hidden = rawNumber.isNullOrBlank() || callDetails.handlePresentation != TelecomManager.PRESENTATION_ALLOWED
+            val normalizedNumber = if (hidden) "" else NumberFormatRules.check(rawNumber.orEmpty()).normalized
 
             // Безопасный асинхронный вызов с жестким таймаутом (2.5 с)
             val isHandled = runBlocking(Dispatchers.IO) {
                 withTimeoutOrNull(SCREENING_TIMEOUT_MS) {
-                    processCall(callDetails, normalizedNumber)
+                    processCall(callDetails, normalizedNumber, hidden)
                     true
                 } ?: false
             }
@@ -69,93 +64,65 @@ class CallScreeningServiceImpl : CallScreeningService() {
         }
     }
 
-    private suspend fun processCall(callDetails: Call.Details, normalizedNumber: String) {
+    private suspend fun processCall(callDetails: Call.Details, normalizedNumber: String, hidden: Boolean) {
         val appContext = applicationContext
-        val callHistoryDao = CallGuardDatabase.getInstance(appContext).callHistoryDao()
-
-        // 2. Белый список контактов (I/O)
-        val contactWhitelistManager = ContactWhitelistManager(appContext)
-        if (contactWhitelistManager.isContact(normalizedNumber)) {
-            Log.d("CallGuard", "Номер $normalizedNumber найден в контактах — пропускаем")
-            allowCall(callDetails)
-            asyncSaveCallHistory(callHistoryDao, normalizedNumber, isSpam = false, blockModeApplied = "NONE", reason = "contact_whitelist")
-            return
-        }
-
-        // 3. Быстрая эвристика (память/регекс)
-        val heuristicResult = HeuristicFilter.evaluate(normalizedNumber)
-
-        // 4. Проверка в локальной Room БД (I/O)
-        val spamRepository = SpamNumberRepository(appContext)
-        val isKnownInDb = spamRepository.isKnownSpam(normalizedNumber)
-
-        val isSpamCandidate = (heuristicResult.verdict == HeuristicResult.Verdict.BLOCK) ||
-                (heuristicResult.verdict == HeuristicResult.Verdict.SUSPECT) ||
-                isKnownInDb
-
-        if (!isSpamCandidate) {
-            allowCall(callDetails)
-            asyncSaveCallHistory(callHistoryDao, normalizedNumber, isSpam = false, blockModeApplied = "NONE", reason = "clean")
-            return
-        }
-
-        Log.w("CallGuard", "Обнаружен спам/скам звонок: $normalizedNumber (score=${heuristicResult.score}, inDb=$isKnownInDb)")
-
-        // 5. Получение режима блокировки из DataStore (I/O)
         val settingsRepository = SettingsRepository(appContext)
-        val blockMode = settingsRepository.getBlockMode()
-
-        // 6. Формирование ответа Telecom
-        val responseBuilder = CallResponse.Builder()
-
-        when (blockMode) {
-            BlockMode.REJECT -> {
-                responseBuilder
+        val database by lazy { CallGuardDatabase.getInstance(appContext) }
+        var spamEntry: uz.callguard.app.data.SpamNumberEntity? = null
+        val decision = CallProtectionEngine().evaluate(
+            number = normalizedNumber,
+            hidden = hidden,
+            readCourierEnd = { settingsRepository.courierModeEndFlow.first() },
+            isContact = { ContactWhitelistManager(appContext).isContact(normalizedNumber) },
+            readSettings = { settingsRepository.protectionRulesFlow.first() },
+            readPatterns = { database.numberPatternDao().getAll().map { it.pattern } },
+            readSpamEntry = { SpamNumberRepository(appContext).findNumber(normalizedNumber).also { spamEntry = it } }
+        )
+        if (decision != null) {
+            if (decision.blocked) {
+                respondToCall(callDetails, CallResponse.Builder()
                     .setDisallowCall(true)
                     .setRejectCall(true)
-                    .setSkipNotification(false)
+                    .setSkipNotification(true)
+                    .build())
+                postBlockedNotification(if (hidden) "Скрытый номер" else normalizedNumber)
+            } else {
+                allowCall(callDetails)
             }
-            BlockMode.MUTE -> {
-                responseBuilder
-                    .setDisallowCall(false)
-                    .setSilenceCall(true)
+            if (decision == ScreeningDecision.GLOBAL_WARNING) {
+                OverlayWarningTrigger.show(appContext, normalizedNumber, spamEntry?.spamScore ?: 30, emptyList(),
+                    category = spamEntry?.category ?: "unknown")
             }
-            BlockMode.WARN -> {
-                responseBuilder
-                    .setDisallowCall(false)
+            if (decision != ScreeningDecision.COURIER && decision != ScreeningDecision.HIDDEN_ALLOWED) {
+                asyncSaveCallHistory(database.callHistoryDao(), if (hidden) "Скрытый номер" else normalizedNumber,
+                    isSpam = decision.blocked || decision == ScreeningDecision.GLOBAL_WARNING, blockModeApplied = if (decision.blocked) BlockMode.REJECT.name else if (decision == ScreeningDecision.GLOBAL_WARNING) BlockMode.WARN.name else "NONE",
+                    reason = decision.reason)
+            }
+            return
+        }
+        val callHistoryDao = database.callHistoryDao()
+
+        // All deterministic checks already passed, including contacts and the spam database.
+        val heuristicResult = HeuristicFilter.evaluate(normalizedNumber)
+        allowCall(callDetails)
+        val suspicious = heuristicResult.verdict == HeuristicResult.Verdict.SUSPICIOUS
+        asyncSaveCallHistory(callHistoryDao, normalizedNumber, isSpam = suspicious,
+            blockModeApplied = if (suspicious) BlockMode.WARN.name else "NONE",
+            reason = if (suspicious) heuristicResult.reasons.joinToString(", ") else "clean")
+        if (suspicious) {
+            // OverlayWarningTrigger marshals to the main looper; never wait for UI inside the Telecom deadline.
+            OverlayWarningTrigger.show(appContext, normalizedNumber, heuristicResult.score, heuristicResult.reasons)
+        }
+    }
+
+    private fun postBlockedNotification(number: String) {
+        serviceScope.launch {
+            try {
+                NotificationHelper(applicationContext).showBlockedCallNotification(number)
+            } catch (error: Exception) {
+                Log.e("CallGuard", "Не удалось показать уведомление о блокировке", error)
             }
         }
-
-        respondToCall(callDetails, responseBuilder.build())
-
-        // 7. Сохранение истории в фоновом режиме (fire-and-forget, дедупликация в пределах 2 с)
-        val riskScore = if (isKnownInDb) maxOf(heuristicResult.score, 80) else heuristicResult.score
-        val reasonsList = if (isKnownInDb) heuristicResult.reasons + "known_in_local_spam_db" else heuristicResult.reasons
-        val reasonsText = reasonsList.joinToString(", ")
-
-        asyncSaveCallHistory(
-            dao = callHistoryDao,
-            number = normalizedNumber,
-            isSpam = true,
-            blockModeApplied = blockMode.name,
-            reason = reasonsText
-        )
-
-        // 8. Оверлей и системное уведомление
-        withContext(Dispatchers.Main) {
-            OverlayWarningTrigger.show(
-                appContext,
-                normalizedNumber,
-                riskScore,
-                reasonsList,
-            )
-        }
-
-        val notificationHelper = NotificationHelper(appContext)
-        notificationHelper.showSpamWarningNotification(
-            number = normalizedNumber,
-            details = "Риск: $riskScore% | $reasonsText"
-        )
     }
 
     private fun asyncSaveCallHistory(

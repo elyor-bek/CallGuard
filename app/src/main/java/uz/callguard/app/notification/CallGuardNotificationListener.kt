@@ -8,6 +8,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import uz.callguard.app.data.CourierMode
+import uz.callguard.app.data.SettingsRepository
+import uz.callguard.app.data.SpamPolicy
+import uz.callguard.app.whitelist.ContactWhitelistManager
 import uz.callguard.app.data.SpamNumberRepository
 import uz.callguard.app.heuristic.HeuristicFilter
 import uz.callguard.app.heuristic.HeuristicResult
@@ -74,6 +79,15 @@ class CallGuardNotificationListener : NotificationListenerService() {
     }
 
     private suspend fun evaluateAndAct(number: String) {
+        val pauseEnd = SettingsRepository(applicationContext).courierModeEndFlow.first()
+        if (CourierMode.isActive(pauseEnd, System.currentTimeMillis())) return
+        if (ContactWhitelistManager(applicationContext).isContact(number)) return
+        val entry = repository.findNumber(number)
+        if (SpamPolicy.classify(entry) != SpamPolicy.Action.NONE) {
+            OverlayWarningTrigger.show(applicationContext, number, entry!!.spamScore, emptyList(),
+                category = if (entry.isGlobal) entry.category ?: "unknown" else null)
+            return
+        }
         val heuristicResult = HeuristicFilter.evaluate(number)
 
         when (heuristicResult.verdict) {
@@ -81,7 +95,7 @@ class CallGuardNotificationListener : NotificationListenerService() {
                 Log.w("CallGuard", "BLOCK candidate: $number reasons=${heuristicResult.reasons}")
                 OverlayWarningTrigger.show(applicationContext, number, heuristicResult.score, heuristicResult.reasons)
             }
-            HeuristicResult.Verdict.SUSPECT -> {
+            HeuristicResult.Verdict.SUSPICIOUS -> {
                 OverlayWarningTrigger.show(applicationContext, number, heuristicResult.score, heuristicResult.reasons)
             }
             HeuristicResult.Verdict.UNKNOWN -> {

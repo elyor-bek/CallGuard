@@ -1,5 +1,7 @@
 package uz.callguard.app.ui
 
+import uz.callguard.app.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -28,6 +30,6 @@ internal fun ListEmptyState(icon: ImageVector, title: String, description: Strin
 @Composable
 internal fun ListErrorDialog(message: String?, onDismiss: () -> Unit) {
     if (message != null) AlertDialog(onDismissRequest = onDismiss,
-        title = { Text("Не удалось выполнить действие") }, text = { Text(message) },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Понятно") } })
+        title = { Text(stringResource(R.string.error_title)) }, text = { Text(message) },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } })
 }
