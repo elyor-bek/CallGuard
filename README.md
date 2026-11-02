@@ -50,3 +50,37 @@
        │ (Не найден)
        ▼
  4. Проверка Smart Rules / Эвристики ─────► [ Блокировка / Оверлей / Пропуск ]
+
+🛠️ Технологический стек
+Язык: Kotlin 2.2+
+UI Framework: Jetpack Compose (Material 3 components, Navigation)
+Database: Room Database v5 (c поддержкой автоматических и кастомных миграций)
+Key-Value Storage: Jetpack DataStore (Preferences)
+Background Work: WorkManager (PeriodicWorkRequest, CoroutineWorker)
+System Integration: CallScreeningService, WindowManager (Application Overlay), RoleManager (API 29+)
+Async & Reactive: Kotlin Coroutines, StateFlow, SharedFlowJSON Serialization: Gson / kotlinx.serialization
+Testing: JUnit 4, Espresso, AndroidX Test libraries (40/40 Unit-тестов)
+
+🔒 Разрешения и Безопасность
+CallGuard запрашивает минимально необходимый набор системных разрешений:
+Разрешение — Назначение:
+ROLE_CALL_SCREENING — Перехват и анализ номеров входящих вызовов на уровне ОС.
+READ_CONTACTS — Исключение номеров из телефонной книги из-под действия фильтров.
+SYSTEM_ALERT_WINDOW — Отображение плашки предупреждения поверх экрана звонилки.
+POST_NOTIFICATIONS — Информирование пользователя о заблокированных спам-вызовах (без звука).
+Privacy Guarantee: Приложение не имеет доступа к передаче личных контактов или истории звонков за пределы устройства.
+🚀 Сборка и Запуск Проекта
+Требования к среде:
+Android Studio: Ladybug / Jellyfish или новее
+JDK: 21
+Android SDK: Target API 35+ / Min API 29 (Android 10)
+Шаги по сборке:
+Склонируйте репозиторий:
+git clone [https://github.com/your-username/CallGuard.git](https://github.com/your-username/CallGuard.git)
+cd CallGuard
+Запустите модульные тесты:
+./gradlew test
+Скомпилируйте Debug APK:
+./gradlew assembleDebug
+Готовый APK файл появится по пути: app/build/outputs/apk/debug/app-debug.apk.
+📄 ЛицензияПроект распространяется под лицензией MIT. Подробнее см. в файле LICENSE.
