@@ -50,7 +50,7 @@
        │ (Не найден)
        ▼
  4. Проверка Smart Rules / Эвристики ─────► [ Блокировка / Оверлей / Пропуск ]
-
+```
 🛠️ Технологический стек
 Язык: Kotlin 2.2+
 UI Framework: Jetpack Compose (Material 3 components, Navigation)
