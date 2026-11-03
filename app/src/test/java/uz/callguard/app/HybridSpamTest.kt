@@ -25,7 +25,7 @@ class HybridSpamTest {
         assertEquals(SpamPolicy.Action.BLOCK, SpamPolicy.classify(global(0, 0).copy(isGlobal = false), now))
     }
     @Test fun feedIsHashOnlyAndRefreshesTimestamp() {
-        val rows = GlobalSpamFeed.parse(GlobalSpamFeed.stubJson, now)
+        val rows = GlobalSpamFeed.parse("""[{"numberHash":"${"d".repeat(64)}","spamScore":85,"category":"fraud"},{"numberHash":"${"e".repeat(64)}","spamScore":45,"category":"advertising"}]""", now)
         assertEquals(2, rows.size)
         assertTrue(rows.all { it.isGlobal && it.phoneNumber == null && it.updatedAt == now })
     }

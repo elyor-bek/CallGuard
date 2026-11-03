@@ -13,7 +13,21 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.Surface
+import uz.callguard.app.data.ThemeMode
+import uz.callguard.app.ui.UiSettingsViewModel
+import uz.callguard.app.ui.AppearanceAndSmsSettings
+import androidx.activity.compose.BackHandler
+import uz.callguard.app.ui.FeedsScreen
+import androidx.activity.SystemBarStyle
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -64,7 +78,7 @@ import uz.callguard.app.ui.OnboardingScreen
 import uz.callguard.app.ui.SpamNumbersScreen
 import uz.callguard.app.ui.theme.CallGuardTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
     private var isRoleGranted by mutableStateOf(false)
     private var roleAvailable by mutableStateOf(false)
@@ -112,18 +126,50 @@ class MainActivity : ComponentActivity() {
         checkAllPermissionsStatus()
 
         setContent {
-            CallGuardTheme {
+            val uiSettings: UiSettingsViewModel = viewModel()
+            val uiPreferences by uiSettings.preferences.collectAsStateWithLifecycle()
+            val selected = uiPreferences
+            LaunchedEffect(selected?.language) {
+                if (selected != null) {
+                    val target = LocaleListCompat.forLanguageTags(selected.language.tag)
+                    if (AppCompatDelegate.getApplicationLocales() != target) {
+                        AppCompatDelegate.setApplicationLocales(target)
+                    }
+                }
+            }
+            val dark = when (selected?.theme) {
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+                else -> isSystemInDarkTheme()
+            }
+            CallGuardTheme(darkTheme = dark) {
+                val barColor = MaterialTheme.colorScheme.surface.toArgb()
+                SideEffect {
+                    enableEdgeToEdge(
+                        statusBarStyle = SystemBarStyle.auto(barColor, barColor) { dark },
+                        navigationBarStyle = SystemBarStyle.auto(barColor, barColor) { dark }
+                    )
+                }
+                if (selected == null) {
+                    Surface(Modifier.fillMaxSize()) { }
+                    return@CallGuardTheme
+                }
                 val scope = rememberCoroutineScope()
                 val settingsRepository = remember { SettingsRepository(applicationContext) }
                 var currentBlockMode by remember { mutableStateOf(BlockMode.WARN) }
                 var currentTab by rememberSaveable { mutableStateOf(0) }
+                var showFeeds by rememberSaveable { mutableStateOf(false) }
+                BackHandler(enabled = currentTab == 3 && showFeeds) { showFeeds = false }
+                LaunchedEffect(currentTab) { if (currentTab != 3) showFeeds = false }
 
                 LaunchedEffect(Unit) {
                     currentBlockMode = settingsRepository.getBlockMode()
                 }
 
+                var previousRole by rememberSaveable { mutableStateOf(isRoleGranted) }
                 LaunchedEffect(isRoleGranted) {
-                    if (isRoleGranted) currentTab = 0
+                    if (isRoleGranted && !previousRole) currentTab = 0
+                    previousRole = isRoleGranted
                 }
                 val showOnboarding = !isRoleGranted
 
@@ -176,7 +222,11 @@ class MainActivity : ComponentActivity() {
                                 0 -> CallListScreen()
                                 1 -> SpamNumbersScreen()
                                 2 -> ProtectionRulesScreen()
-                                3 -> SettingsScreen(
+                                3 -> if (showFeeds) FeedsScreen(onBack = { showFeeds = false }) else SettingsScreen(
+                                    onOpenFeeds = { showFeeds = true },
+                                    uiSettings = uiSettings,
+                                    notificationAccess = isNotificationGranted,
+                                    onRequestNotificationAccess = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
                                     currentBlockMode = currentBlockMode,
                                     notificationsGranted = canPostNotifications,
                                     onRequestNotifications = { requestNotifications() },
@@ -296,6 +346,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun SettingsScreen(
+    onOpenFeeds: () -> Unit,
+    uiSettings: UiSettingsViewModel,
+    notificationAccess: Boolean,
+    onRequestNotificationAccess: () -> Unit,
     currentBlockMode: BlockMode,
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
@@ -319,6 +373,16 @@ fun SettingsScreen(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = 16.dp)
         )
+
+        Card(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.feeds_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.feeds_settings_hint), style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(onClick = onOpenFeeds) { Text(stringResource(R.string.feeds_manage)) }
+            }
+        }
+
+        AppearanceAndSmsSettings(uiSettings, notificationAccess, onRequestNotificationAccess)
 
         Card(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

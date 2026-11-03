@@ -1,5 +1,12 @@
 package uz.callguard.app.notification
 
+import android.app.Notification
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import uz.callguard.app.data.CallGuardDatabase
+import uz.callguard.app.data.BlockedSmsEntity
+import uz.callguard.app.data.HashUtils
+import uz.callguard.app.sms.SmsKeywordMatcher
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -51,6 +58,21 @@ class CallGuardNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        if (sbn.packageName == packageName) return
+        val notification = sbn.notification
+        val messagePackages = setOf("com.google.android.apps.messaging", "com.samsung.android.messaging", "com.android.mms",
+            "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger", "org.thoughtcrime.securesms")
+        val message = notification.category == Notification.CATEGORY_MESSAGE || sbn.packageName in messagePackages
+        if (message && notification.category != Notification.CATEGORY_CALL &&
+            notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 &&
+            notification.flags and Notification.FLAG_ONGOING_EVENT == 0) {
+            scope.launch {
+                try { filterMessage(sbn) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { Log.e("CallGuard", "Message filtering failed", error) }
+            }
+            return
+        }
         if (sbn.packageName !in watchedPackages) return
 
         val number = extractPhoneNumber(sbn) ?: run {
@@ -61,6 +83,26 @@ class CallGuardNotificationListener : NotificationListenerService() {
         scope.launch {
             evaluateAndAct(number)
         }
+    }
+
+    private suspend fun filterMessage(sbn: StatusBarNotification) {
+        val extras = sbn.notification.extras
+        val text = (extras.getCharSequence(Notification.EXTRA_TEXT)
+            ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT))?.toString()?.take(16_384) ?: return
+        val dao = CallGuardDatabase.getInstance(applicationContext).smsSpamDao()
+        val match = SmsKeywordMatcher.match(text, dao.getKeywords()) ?: return
+        val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().take(256)
+        cancelNotification(sbn.key)
+        dao.insertBlocked(BlockedSmsEntity(
+            id = HashUtils.sha256("${sbn.key}:${sbn.postTime}:$text"),
+            notificationKey = sbn.key, packageName = sbn.packageName,
+            sender = sender, body = text, matchedKeyword = match.keyword
+        ))
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
     }
 
     /**

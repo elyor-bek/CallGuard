@@ -12,13 +12,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
-@Database(entities = [SpamNumberEntity::class, CallHistoryEntity::class, NumberPatternEntity::class, PendingSpamReport::class], version = 5, exportSchema = false)
+@Database(entities = [SpamNumberEntity::class, CallHistoryEntity::class, NumberPatternEntity::class, PendingSpamReport::class, SmsKeywordEntity::class, BlockedSmsEntity::class, SpamFeedEntity::class], version = 7, exportSchema = false)
 abstract class CallGuardDatabase : RoomDatabase() {
 
     abstract fun spamNumberDao(): SpamNumberDao
     abstract fun callHistoryDao(): CallHistoryDao
     abstract fun numberPatternDao(): NumberPatternDao
     abstract fun pendingSpamReportDao(): PendingSpamReportDao
+    abstract fun smsSpamDao(): SmsSpamDao
+    abstract fun spamFeedDao(): SpamFeedDao
 
     companion object {
         val MIGRATION_2_3 = object : Migration(2, 3) {
@@ -44,6 +46,21 @@ abstract class CallGuardDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS sms_keywords (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, keyword TEXT NOT NULL, isRegex INTEGER NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sms_keywords_keyword_isRegex ON sms_keywords (keyword, isRegex)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS blocked_sms (id TEXT NOT NULL, notificationKey TEXT NOT NULL, packageName TEXT NOT NULL, sender TEXT NOT NULL, body TEXT NOT NULL, matchedKeyword TEXT NOT NULL, blockedAt INTEGER NOT NULL, PRIMARY KEY(id))")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS spam_feeds (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, isActive INTEGER NOT NULL, lastSync INTEGER NOT NULL)")
+                db.execSQL("INSERT INTO spam_feeds (id, name, url, isActive, lastSync) VALUES (1, 'Recommended database', 'https://1byte.uz/spam_base.json', 1, 0)")
+            }
+        }
+
         @Volatile
         private var INSTANCE: CallGuardDatabase? = null
 
@@ -54,7 +71,7 @@ abstract class CallGuardDatabase : RoomDatabase() {
                     CallGuardDatabase::class.java,
                     "callguard_local_spam_db"
                 )
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .fallbackToDestructiveMigration(true)
                 .addCallback(DatabaseCallback(context.applicationContext))
                 .build().also { INSTANCE = it }
@@ -68,9 +85,16 @@ abstract class CallGuardDatabase : RoomDatabase() {
 
         override fun onCreate(db: SupportSQLiteDatabase) {
             super.onCreate(db)
+            // Seed synchronously, before any first-run worker can query the table.
+            db.execSQL("INSERT INTO spam_feeds (id, name, url, isActive, lastSync) VALUES (1, 'Recommended database', 'https://1byte.uz/spam_base.json', 1, 0)")
             CoroutineScope(Dispatchers.IO).launch {
                 populateInitialSpamBase(context)
             }
+        }
+
+        override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
+            super.onDestructiveMigration(db)
+            db.execSQL("INSERT OR IGNORE INTO spam_feeds (id, name, url, isActive, lastSync) VALUES (1, 'Recommended database', 'https://1byte.uz/spam_base.json', 1, 0)")
         }
 
         private suspend fun populateInitialSpamBase(context: Context) {

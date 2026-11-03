@@ -46,43 +46,60 @@ fun CallListScreen(modifier: Modifier = Modifier, viewModel: CallListViewModel =
     val sections = remember(history, today) { groupCallHistory(history.orEmpty(), today) }
 
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            Text(stringResource(R.string.history), style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
+        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item(key = "history:title") {
+                Text(stringResource(R.string.history), style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+            }
             spamCount?.let { count ->
-                Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                    shape = MaterialTheme.shapes.large) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(stringResource(R.string.spam_summary, count), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.summary_hint), style = MaterialTheme.typography.bodySmall)
+                item(key = "history:summary") {
+                    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                        shape = MaterialTheme.shapes.large) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(stringResource(R.string.spam_summary, count), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.summary_hint), style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }
-            CourierModeCard(courierModeEnd, now, busy,
-                viewModel::pauseFor30Minutes, viewModel::pauseForOneHour, viewModel::resumeProtection)
-            when {
-                history == null -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+            item(key = "history:weekly-demo") {
+                Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.weekly_chart_title), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.weekly_chart_demo), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        WeeklyStatsChart(data = listOf(3, 7, 1, 14, 5, 2, 9))
+                    }
                 }
-                history.orEmpty().isEmpty() -> ListEmptyState(Icons.Rounded.History, stringResource(R.string.history_empty),
-                    stringResource(R.string.history_hint), Modifier.weight(1f))
-                else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    sections.forEach { (section, calls) ->
-                        stickyHeader(key = "section:${section.name}") {
-                            Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
-                                Text(stringResource(section.titleRes), style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-                            }
+            }
+            item(key = "history:courier") {
+                CourierModeCard(courierModeEnd, now, busy,
+                    viewModel::pauseFor30Minutes, viewModel::pauseForOneHour, viewModel::resumeProtection)
+            }
+            when {
+                history == null -> item(key = "history:loading") {
+                    Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                }
+                history.orEmpty().isEmpty() -> item(key = "history:empty") {
+                    ListEmptyState(Icons.Rounded.History, stringResource(R.string.history_empty),
+                        stringResource(R.string.history_hint), Modifier.height(260.dp))
+                }
+                else -> sections.forEach { (section, calls) ->
+                    stickyHeader(key = "section:${section.name}") {
+                        Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(section.titleRes), style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
                         }
-                        items(calls, key = { it.key }) { call ->
-                            CallHistoryItemCard(call, busy, onReportSpam = { viewModel.reportSpam(call) },
-                                onIgnore = { pendingDeleteIds = call.calls.map { it.id } },
-                                onComplaint = { viewModel.queueComplaint(call) },
-                                modifier = Modifier.padding(horizontal = 16.dp).animateItem())
-                        }
+                    }
+                    items(calls, key = { it.key }) { call ->
+                        CallHistoryItemCard(call, busy, onReportSpam = { viewModel.reportSpam(call) },
+                            onIgnore = { pendingDeleteIds = call.calls.map { it.id } },
+                            onComplaint = { viewModel.queueComplaint(call) },
+                            modifier = Modifier.padding(horizontal = 16.dp).animateItem())
                     }
                 }
             }

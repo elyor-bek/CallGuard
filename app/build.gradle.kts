@@ -16,8 +16,8 @@ android {
         applicationId = "uz.callguard.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -33,6 +33,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { it.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2") }
+    }
     buildFeatures {
         compose = true
     }
@@ -46,6 +50,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.re2j:re2j:1.8")
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
@@ -59,6 +65,9 @@ dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     testImplementation(libs.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation("org.robolectric:robolectric:4.17")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

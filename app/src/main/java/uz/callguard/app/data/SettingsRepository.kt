@@ -17,6 +17,10 @@ data class ProtectionRuleSettings(
     val blockForeignNumbers: Boolean = false
 )
 
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+enum class AppLanguage(val tag: String) { SYSTEM(""), RU("ru"), UZ("uz"), EN("en") }
+data class UiPreferences(val theme: ThemeMode = ThemeMode.SYSTEM, val language: AppLanguage = AppLanguage.SYSTEM)
+
 enum class BlockMode {
     WARN,   // Только предупреждать (оверлей / пуш), не сбрасывать и не глушить звук
     MUTE,   // Отключить звук звонка
@@ -26,6 +30,17 @@ enum class BlockMode {
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "callguard_settings")
 
 class SettingsRepository(private val context: Context) {
+
+    private val themeModeKey = stringPreferencesKey("theme_mode")
+    private val languageKey = stringPreferencesKey("app_language")
+    val uiPreferencesFlow: Flow<UiPreferences> = context.dataStore.data.map { preferences ->
+        UiPreferences(
+            ThemeMode.entries.firstOrNull { it.name == preferences[themeModeKey] } ?: ThemeMode.SYSTEM,
+            AppLanguage.entries.firstOrNull { it.name == preferences[languageKey] } ?: AppLanguage.SYSTEM
+        )
+    }
+    suspend fun setThemeMode(mode: ThemeMode) { context.dataStore.edit { it[themeModeKey] = mode.name } }
+    suspend fun setAppLanguage(language: AppLanguage) { context.dataStore.edit { it[languageKey] = language.name } }
 
     private val courierModeEndKey = longPreferencesKey("courier_mode_end_timestamp")
     val courierModeEndFlow: Flow<Long> = context.dataStore.data.map { it[courierModeEndKey] ?: 0L }
